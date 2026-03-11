@@ -17,12 +17,11 @@ jobs:
         uses: ASzc/change-string-case-action@v6
         with:
           string: ${{ github.repository }}
-      - name: Log in to the Container registry
+      - name: Log in to Docker Hub
         uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Create tag variables
         env:
           TAG: ${{ github.ref_name }}
@@ -30,7 +29,7 @@ jobs:
         run: |
           BUILD_TYPE=$([[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] && echo "stable" || echo "beta")
           echo "BUILD_TYPE=${BUILD_TYPE}" >> $GITHUB_ENV
-          echo "BASE=ghcr.io/${LOWERCASE_REPO}" >> $GITHUB_ENV
+          echo "BASE=docker.io/fastg/frigate" >> $GITHUB_ENV
           echo "BUILD_TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
           echo "CLEAN_VERSION=$(echo ${GITHUB_REF##*/} | tr '[:upper:]' '[:lower:]' | sed 's/^[v]//')" >> $GITHUB_ENV
       - name: Tag and push the main image
