@@ -65,7 +65,7 @@ export default function CrossCameraTracking() {
         setStats(statsRes.data);
       }
       setError(null);
-    } catch (e) {
+    } catch {
       setError("Failed to load cross-camera data");
     } finally {
       setLoading(false);
