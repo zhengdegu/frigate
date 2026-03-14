@@ -12,15 +12,9 @@ class CameraLink(FrigateBaseModel):
 
     source: str = Field(title="Source camera name.")
     target: str = Field(title="Target camera name.")
-    min_seconds: float = Field(
-        default=3.0, title="Minimum transfer time in seconds."
-    )
-    max_seconds: float = Field(
-        default=60.0, title="Maximum transfer time in seconds."
-    )
-    bidirectional: bool = Field(
-        default=True, title="Whether the link works in both directions."
-    )
+    min_seconds: float = Field(default=3.0, title="Minimum transfer time in seconds.")
+    max_seconds: float = Field(default=60.0, title="Maximum transfer time in seconds.")
+    bidirectional: bool = Field(default=True, title="Whether the link works both ways.")
 
 
 class CrossCameraConfig(FrigateBaseModel):
@@ -31,28 +25,22 @@ class CrossCameraConfig(FrigateBaseModel):
         default=["car"], title="Object labels to track across cameras."
     )
     plate_match_threshold: float = Field(
-        default=0.8,
-        title="Fuzzy match threshold for license plates (0-1).",
+        default=0.8, title="Fuzzy match threshold for license plates (0-1)."
     )
     color_weight: float = Field(
-        default=0.4,
-        title="Weight for color similarity in combined score (0-1).",
+        default=0.4, title="Weight for color similarity in combined score."
     )
     type_weight: float = Field(
-        default=0.3,
-        title="Weight for vehicle type similarity in combined score (0-1).",
+        default=0.3, title="Weight for vehicle type similarity in combined score."
     )
     appearance_weight: float = Field(
-        default=0.3,
-        title="Weight for overall appearance similarity in combined score (0-1).",
+        default=0.3, title="Weight for histogram appearance similarity."
     )
     match_threshold: float = Field(
-        default=0.55,
-        title="Minimum combined score to consider a match when plate is unavailable.",
+        default=0.55, title="Minimum combined score for a match without plate."
     )
     gallery_max_age: float = Field(
-        default=300.0,
-        title="Maximum age in seconds to keep a disappeared track in the gallery.",
+        default=300.0, title="Seconds to keep a disappeared track in the gallery."
     )
     topology: list[CameraLink] = Field(
         default=[], title="Camera spatial relationships."
