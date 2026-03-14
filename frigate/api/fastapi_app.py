@@ -139,6 +139,11 @@ def create_fastapi_app(
     app.include_router(motion_search.router)
     app.include_router(record.router)
     app.include_router(debug_replay.router)
+
+    # Cross-camera tracking API
+    from frigate.api import cross_camera as cross_camera_api
+
+    app.include_router(cross_camera_api.router)
     # App Properties
     app.frigate_config = frigate_config
     app.genai_manager = GenAIClientManager(frigate_config)

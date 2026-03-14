@@ -30,6 +30,7 @@ const Chat = lazy(() => import("@/pages/Chat"));
 const Logs = lazy(() => import("@/pages/Logs"));
 const AccessDenied = lazy(() => import("@/pages/AccessDenied"));
 const Replay = lazy(() => import("@/pages/Replay"));
+const CrossCameraTracking = lazy(() => import("@/pages/CrossCameraTracking"));
 
 function App() {
   const { data: config } = useSWR<FrigateConfig>("config", {
@@ -104,6 +105,7 @@ function DefaultAppView() {
               <Route path="/chat" element={<Chat />} />
               <Route path="/playground" element={<UIPlayground />} />{" "}
               <Route path="/replay" element={<Replay />} />{" "}
+              <Route path="/cross-camera" element={<CrossCameraTracking />} />
             </Route>
             <Route path="/unauthorized" element={<AccessDenied />} />
             <Route path="*" element={<Redirect to="/" />} />

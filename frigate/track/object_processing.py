@@ -4,6 +4,7 @@ import json
 import logging
 import queue
 import threading
+import time
 from collections import defaultdict
 from enum import Enum
 from multiprocessing import Queue as MpQueue
@@ -166,6 +167,24 @@ class TrackedObjectProcessor(threading.Thread):
                 if global_id:
                     after["global_id"] = global_id
                     obj.obj_data["global_id"] = global_id
+
+                    # Publish cross-camera event via MQTT
+                    xc_tracks = self.cross_camera_tracker.get_global_tracks()
+                    xc_track = xc_tracks.get(global_id)
+                    if xc_track and len(xc_track.get("sightings", [])) > 1:
+                        self.dispatcher.publish(
+                            "cross_camera/tracked",
+                            json.dumps({
+                                "type": "cross_camera",
+                                "global_id": global_id,
+                                "plate": xc_track.get("plate"),
+                                "color": xc_track.get("color"),
+                                "vehicle_type": xc_track.get("vehicle_type"),
+                                "camera": camera,
+                                "sightings": xc_track.get("sightings", []),
+                            }),
+                            retain=False,
+                        )
 
             message = {
                 "before": obj.previous,
@@ -713,6 +732,10 @@ class TrackedObjectProcessor(threading.Thread):
                     )
 
     def run(self) -> None:
+        # Cross-camera cleanup timer (every 60 seconds)
+        _xc_last_cleanup = time.monotonic()
+        _XC_CLEANUP_INTERVAL = 60
+
         while not self.stop_event.is_set():
             # check for config updates
             updated_topics = self.camera_config_subscriber.check_for_updates()
@@ -845,6 +868,15 @@ class TrackedObjectProcessor(threading.Thread):
 
                 event_id, camera, _ = update
                 self.camera_states[camera].finished(event_id)
+
+            # Periodic cross-camera cleanup
+            if self.cross_camera_tracker:
+                now = time.monotonic()
+                if now - _xc_last_cleanup > _XC_CLEANUP_INTERVAL:
+                    removed = self.cross_camera_tracker.cleanup_expired()
+                    if removed > 0:
+                        logger.debug(f"Cross-camera cleanup: removed {removed} expired tracks")
+                    _xc_last_cleanup = now
 
         # shut down camera states
         for state in self.camera_states.values():

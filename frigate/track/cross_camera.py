@@ -69,9 +69,9 @@ _HUE_MAP = {
     5: "cyan",
     6: "blue",
     7: "blue",
-    8: "purple",
-    9: "pink",
-    10: "red",
+    8: "blue",
+    9: "purple",
+    10: "pink",
     11: "red",
 }
 

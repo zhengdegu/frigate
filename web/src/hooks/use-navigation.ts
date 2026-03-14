@@ -8,6 +8,7 @@ import { IoSearch } from "react-icons/io5";
 import { LuConstruction } from "react-icons/lu";
 import { MdCategory, MdChat, MdVideoLibrary } from "react-icons/md";
 import { TbFaceId } from "react-icons/tb";
+import { LuRadar } from "react-icons/lu";
 import useSWR from "swr";
 import { useIsAdmin } from "./use-is-admin";
 
@@ -19,6 +20,7 @@ export const ID_PLAYGROUND = 5;
 export const ID_FACE_LIBRARY = 6;
 export const ID_CLASSIFICATION = 7;
 export const ID_CHAT = 8;
+export const ID_CROSS_CAMERA = 9;
 
 export default function useNavigation(
   variant: "primary" | "secondary" = "primary",
@@ -91,7 +93,15 @@ export default function useNavigation(
           url: "/chat",
           enabled: isDesktop && isAdmin && config?.genai?.model !== "none",
         },
+        {
+          id: ID_CROSS_CAMERA,
+          variant,
+          icon: LuRadar,
+          title: "Cross-Camera",
+          url: "/cross-camera",
+          enabled: isDesktop && isAdmin && config?.cross_camera?.enabled,
+        },
       ] as NavData[],
-    [config?.face_recognition?.enabled, config?.genai?.model, variant, isAdmin],
+    [config?.face_recognition?.enabled, config?.genai?.model, config?.cross_camera?.enabled, variant, isAdmin],
   );
 }
