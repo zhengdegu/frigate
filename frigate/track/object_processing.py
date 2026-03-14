@@ -109,6 +109,14 @@ class TrackedObjectProcessor(threading.Thread):
             lambda: defaultdict(dict)
         )
 
+
+        # Cross-camera tracking
+        self.cross_camera_tracker = None
+        if hasattr(self.config, "cross_camera") and self.config.cross_camera.enabled:
+            from frigate.track.cross_camera import CrossCameraTracker
+            self.cross_camera_tracker = CrossCameraTracker(self.config.cross_camera)
+            logger.info("Cross-camera tracking enabled")
+
         for camera in self.config.cameras.keys():
             self.create_camera_state(camera)
 
@@ -130,6 +138,35 @@ class TrackedObjectProcessor(threading.Thread):
             obj.has_snapshot = self.should_save_snapshot(camera, obj)
             obj.has_clip = self.should_retain_recording(camera, obj)
             after = obj.to_dict()
+
+            # Cross-camera tracking: associate vehicle across cameras
+            if self.cross_camera_tracker and after.get("label") in (self.cross_camera_tracker.config.tracked_objects or []):
+                crop_bgr = None
+                try:
+                    yuv_frame = self.frame_manager.get(
+                        frame_name, self.config.cameras[camera].frame_shape_yuv
+                    )
+                    if yuv_frame is not None:
+                        bgr = cv2.cvtColor(yuv_frame, cv2.COLOR_YUV2BGR_I420)
+                        bx = after["box"]
+                        crop_bgr = bgr[bx[1]:bx[3], bx[0]:bx[2]]
+                except Exception:
+                    pass
+
+                global_id = self.cross_camera_tracker.on_track_update(
+                    camera=camera,
+                    local_track_id=after["id"],
+                    label=after["label"],
+                    frame_time=after["frame_time"],
+                    box=after["box"],
+                    plate=after.get("recognized_license_plate"),
+                    plate_score=after.get("recognized_license_plate_score", 0) or 0,
+                    crop_bgr=crop_bgr,
+                )
+                if global_id:
+                    after["global_id"] = global_id
+                    obj.obj_data["global_id"] = global_id
+
             message = {
                 "before": obj.previous,
                 "after": after,
@@ -154,6 +191,10 @@ class TrackedObjectProcessor(threading.Thread):
             # populate has_snapshot
             obj.has_snapshot = self.should_save_snapshot(camera, obj)
             obj.has_clip = self.should_retain_recording(camera, obj)
+
+            # Cross-camera tracking: notify track ended
+            if self.cross_camera_tracker and obj.obj_data.get("label") in (self.cross_camera_tracker.config.tracked_objects or []):
+                self.cross_camera_tracker.on_track_end(camera, obj.obj_data["id"])
 
             # write thumbnail to disk if it will be saved as an event
             if obj.has_snapshot or obj.has_clip:

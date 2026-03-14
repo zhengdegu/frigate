@@ -20,6 +20,7 @@ from ruamel.yaml import YAML
 from typing_extensions import Self
 
 from frigate.const import REGEX_JSON
+from frigate.config.cross_camera import CrossCameraConfig
 from frigate.detectors import DetectorConfig, ModelConfig
 from frigate.detectors.detector_config import BaseDetectorConfig
 from frigate.plus import PlusApi
@@ -553,6 +554,12 @@ class FrigateConfig(FrigateBaseModel):
         default_factory=LicensePlateRecognitionConfig,
         title="License Plate Recognition",
         description="License plate recognition settings including detection thresholds, formatting, and known plates.",
+    )
+
+    cross_camera: CrossCameraConfig = Field(
+        default_factory=CrossCameraConfig,
+        title="Cross-camera tracking",
+        description="Settings for tracking vehicles across multiple cameras using license plates, color, and vehicle type.",
     )
 
     camera_groups: Dict[str, CameraGroupConfig] = Field(
