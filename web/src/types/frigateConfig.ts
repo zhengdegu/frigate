@@ -380,6 +380,11 @@ export interface FrigateConfig {
     [cameraName: string]: CameraConfig;
   };
 
+  cross_camera: {
+    enabled: boolean;
+    tracked_objects: string[];
+  };
+
   classification: {
     bird: {
       enabled: boolean;
