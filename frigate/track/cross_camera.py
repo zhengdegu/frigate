@@ -553,7 +553,13 @@ class CrossCameraTracker:
             hist_score = color_histogram_similarity(
                 sig.color_histogram, gt.color_histogram
             )
-            color_score = max(color_name_score, hist_score)
+            # If both color names are known but different, override histogram
+            if (sig.color != "unknown" and gt.color != "unknown"
+                    and sig.color != gt.color):
+                color_score = 0.0
+                hist_score = 0.0
+            else:
+                color_score = max(color_name_score, hist_score)
 
             type_score = 1.0 if (
                 sig.vehicle_type != "unknown"
