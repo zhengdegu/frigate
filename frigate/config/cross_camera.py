@@ -24,6 +24,8 @@ class CrossCameraConfig(FrigateBaseModel):
     tracked_objects: list[str] = Field(
         default=["car"], title="Object labels to track across cameras."
     )
+
+    # --- Vehicle matching ---
     plate_match_threshold: float = Field(
         default=0.8, title="Fuzzy match threshold for license plates (0-1)."
     )
@@ -39,6 +41,25 @@ class CrossCameraConfig(FrigateBaseModel):
     match_threshold: float = Field(
         default=0.55, title="Minimum combined score for a match without plate."
     )
+
+    # --- Person matching ---
+    person_upper_color_weight: float = Field(
+        default=0.35, title="Weight for upper body color similarity."
+    )
+    person_lower_color_weight: float = Field(
+        default=0.25, title="Weight for lower body color similarity."
+    )
+    person_body_ratio_weight: float = Field(
+        default=0.15, title="Weight for body proportion similarity."
+    )
+    person_face_weight: float = Field(
+        default=0.25, title="Weight for face embedding similarity."
+    )
+    person_match_threshold: float = Field(
+        default=0.50, title="Minimum combined score for person cross-camera match."
+    )
+
+    # --- General ---
     gallery_max_age: float = Field(
         default=300.0, title="Seconds to keep a disappeared track in the gallery."
     )

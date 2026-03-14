@@ -140,7 +140,7 @@ class TrackedObjectProcessor(threading.Thread):
             obj.has_clip = self.should_retain_recording(camera, obj)
             after = obj.to_dict()
 
-            # Cross-camera tracking: associate vehicle across cameras
+            # Cross-camera tracking: associate vehicle/person across cameras
             if self.cross_camera_tracker and after.get("label") in (self.cross_camera_tracker.config.tracked_objects or []):
                 crop_bgr = None
                 try:
@@ -154,6 +154,14 @@ class TrackedObjectProcessor(threading.Thread):
                 except Exception:
                     pass
 
+                # Extract face info for person tracking
+                face_embedding = None
+                face_name = None
+                if after["label"] == "person":
+                    sub = after.get("sub_label")
+                    if sub and isinstance(sub, (list, tuple)) and len(sub) >= 1:
+                        face_name = sub[0]
+
                 global_id = self.cross_camera_tracker.on_track_update(
                     camera=camera,
                     local_track_id=after["id"],
@@ -163,6 +171,8 @@ class TrackedObjectProcessor(threading.Thread):
                     plate=after.get("recognized_license_plate"),
                     plate_score=after.get("recognized_license_plate_score", 0) or 0,
                     crop_bgr=crop_bgr,
+                    face_embedding=face_embedding,
+                    face_name=face_name,
                 )
                 if global_id:
                     after["global_id"] = global_id
@@ -172,17 +182,24 @@ class TrackedObjectProcessor(threading.Thread):
                     xc_tracks = self.cross_camera_tracker.get_global_tracks()
                     xc_track = xc_tracks.get(global_id)
                     if xc_track and len(xc_track.get("sightings", [])) > 1:
+                        xc_payload = {
+                            "type": "cross_camera",
+                            "global_id": global_id,
+                            "label": xc_track.get("label"),
+                            "camera": camera,
+                            "sightings": xc_track.get("sightings", []),
+                        }
+                        if xc_track.get("label") == "person":
+                            xc_payload["upper_color"] = xc_track.get("upper_color")
+                            xc_payload["lower_color"] = xc_track.get("lower_color")
+                            xc_payload["face_name"] = xc_track.get("face_name")
+                        else:
+                            xc_payload["plate"] = xc_track.get("plate")
+                            xc_payload["color"] = xc_track.get("color")
+                            xc_payload["vehicle_type"] = xc_track.get("vehicle_type")
                         self.dispatcher.publish(
                             "cross_camera/tracked",
-                            json.dumps({
-                                "type": "cross_camera",
-                                "global_id": global_id,
-                                "plate": xc_track.get("plate"),
-                                "color": xc_track.get("color"),
-                                "vehicle_type": xc_track.get("vehicle_type"),
-                                "camera": camera,
-                                "sightings": xc_track.get("sightings", []),
-                            }),
+                            json.dumps(xc_payload),
                             retain=False,
                         )
 
