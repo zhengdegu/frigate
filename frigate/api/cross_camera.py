@@ -161,6 +161,88 @@ def get_cross_camera_alerts(request: Request):
     }
 
 
+@router.get("/api/cross_camera/map_data")
+def get_cross_camera_map_data(request: Request):
+    """Return camera locations and active track paths for map display.
+
+    Each track includes an ordered list of camera coordinates representing
+    the movement path, suitable for Google Maps route rendering.
+    """
+    tracker = _get_tracker(request)
+    if tracker is None:
+        return {"success": False, "message": "Cross-camera tracking not enabled"}
+
+    from frigate.config import FrigateConfig
+
+    config: FrigateConfig = request.app.frigate_config
+    tracks = tracker.get_global_tracks()
+
+    # Build camera location map
+    cameras = {}
+    for cam_name, cam_config in config.cameras.items():
+        lat = getattr(cam_config, "latitude", None)
+        lng = getattr(cam_config, "longitude", None)
+        if lat is not None and lng is not None:
+            cameras[cam_name] = {
+                "name": cam_name,
+                "latitude": lat,
+                "longitude": lng,
+            }
+
+    # Build track paths with coordinates
+    track_paths = []
+    for gid, track in tracks.items():
+        sightings = track.get("sightings", [])
+        if len(sightings) < 1:
+            continue
+
+        # Build ordered waypoints (deduplicated consecutive cameras)
+        waypoints = []
+        for s in sightings:
+            cam = s.get("camera")
+            if cam not in cameras:
+                continue
+            loc = cameras[cam]
+            if not waypoints or waypoints[-1]["camera"] != cam:
+                waypoints.append({
+                    "camera": cam,
+                    "latitude": loc["latitude"],
+                    "longitude": loc["longitude"],
+                    "enter_time": s.get("first_seen"),
+                    "exit_time": s.get("last_seen"),
+                })
+            else:
+                waypoints[-1]["exit_time"] = s.get("last_seen")
+
+        if len(waypoints) < 1:
+            continue
+
+        track_paths.append({
+            "global_id": gid,
+            "label": track.get("label", "unknown"),
+            "upper_color": track.get("upper_color"),
+            "lower_color": track.get("lower_color"),
+            "face_name": track.get("face_name"),
+            "plate": track.get("plate"),
+            "color": track.get("color"),
+            "vehicle_type": track.get("vehicle_type"),
+            "waypoints": waypoints,
+            "cameras_visited": len(set(w["camera"] for w in waypoints)),
+            "first_seen": track.get("created_at"),
+            "last_seen": track.get("updated_at"),
+        })
+
+    # Sort by cameras_visited desc
+    track_paths.sort(key=lambda x: (-x["cameras_visited"], -x["last_seen"]))
+
+    return {
+        "success": True,
+        "cameras": cameras,
+        "tracks": track_paths,
+        "count": len(track_paths),
+    }
+
+
 @router.delete("/api/cross_camera/expired")
 def cleanup_expired_tracks(request: Request):
     """Manually trigger cleanup of expired global tracks."""

@@ -72,6 +72,17 @@ class CameraConfig(FrigateBaseModel):
 
     enabled: bool = Field(default=True, title="Enabled", description="Enabled")
 
+    latitude: Optional[float] = Field(
+        default=None,
+        title="Latitude",
+        description="Camera GPS latitude for map display in cross-camera tracking.",
+    )
+    longitude: Optional[float] = Field(
+        default=None,
+        title="Longitude",
+        description="Camera GPS longitude for map display in cross-camera tracking.",
+    )
+
     # Options with global fallback
     audio: AudioConfig = Field(
         default_factory=AudioConfig,

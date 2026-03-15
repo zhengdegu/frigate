@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import Heading from "@/components/ui/heading";
 import { Button } from "@/components/ui/button";
 import axios from "axios";
+import TrackMapView from "@/components/TrackMapView";
 
 interface Sighting {
   camera: string;
@@ -92,20 +93,23 @@ export default function CrossCameraTracking() {
   const [tracks, setTracks] = useState<Record<string, GlobalTrack>>({});
   const [stats, setStats] = useState<Stats | null>(null);
   const [alertPaths, setAlertPaths] = useState<AlertPath[]>([]);
+  const [mapData, setMapData] = useState<{ cameras: Record<string, any>; tracks: any[] }>({ cameras: {}, tracks: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"tracks" | "alerts">("alerts");
+  const [tab, setTab] = useState<"map" | "alerts" | "tracks">("map");
 
   const fetchData = useCallback(async () => {
     try {
-      const [tracksRes, statsRes, alertsRes] = await Promise.all([
+      const [tracksRes, statsRes, alertsRes, mapRes] = await Promise.all([
         axios.get("/api/cross_camera/tracks"),
         axios.get("/api/cross_camera/stats"),
         axios.get("/api/cross_camera/alerts"),
+        axios.get("/api/cross_camera/map_data"),
       ]);
       if (tracksRes.data.success) setTracks(tracksRes.data.tracks);
       if (statsRes.data.success) setStats(statsRes.data);
       if (alertsRes.data.success) setAlertPaths(alertsRes.data.alerts);
+      if (mapRes.data.success) setMapData({ cameras: mapRes.data.cameras, tracks: mapRes.data.tracks });
       setError(null);
     } catch {
       setError("Failed to load cross-camera data");
@@ -155,6 +159,13 @@ export default function CrossCameraTracking() {
         <Heading as="h2">Cross-Camera Tracking</Heading>
         <div className="flex gap-2">
           <Button
+            variant={tab === "map" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setTab("map")}
+          >
+            🗺️ Map
+          </Button>
+          <Button
             variant={tab === "alerts" ? "default" : "outline"}
             size="sm"
             onClick={() => setTab("alerts")}
@@ -183,7 +194,12 @@ export default function CrossCameraTracking() {
         </div>
       )}
 
-      {tab === "alerts" ? (
+      {tab === "map" ? (
+        <TrackMapView
+          apiKey={window.__FRIGATE_GOOGLE_MAPS_KEY || ""}
+          mapData={mapData}
+        />
+      ) : tab === "alerts" ? (
         <AlertPathsView alertPaths={alertPaths} />
       ) : (
         <TracksView trackList={trackList} />
