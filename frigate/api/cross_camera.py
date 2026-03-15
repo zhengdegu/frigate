@@ -75,7 +75,7 @@ def get_cross_camera_alerts(request: Request):
     if tracker is None:
         return {"success": False, "message": "Cross-camera tracking not enabled"}
 
-    from frigate.models import ReviewSegment
+    from frigate.models import ReviewSegment, Event
 
     tracks = tracker.get_global_tracks()
 
@@ -102,11 +102,28 @@ def get_cross_camera_alerts(request: Request):
         alert_data = alert.data if isinstance(alert.data, dict) else {}
         detection_ids = alert_data.get("detections", [])
 
-        # Find matching global tracks
+        # Method 1: direct match detection ID -> local_track_id
         matched_global_ids = set()
         for det_id in detection_ids:
             if det_id in local_to_global:
                 matched_global_ids.add(local_to_global[det_id])
+
+        # Method 2: bridge via events table
+        # When video restarts, tracker gets new IDs that don't match
+        # old alert detections. Use events table to find current
+        # active events on the same camera, then match to tracker.
+        if not matched_global_ids:
+            try:
+                camera_events = (
+                    Event.select(Event.id)
+                    .where(Event.camera == alert.camera)
+                    .limit(500)
+                )
+                for ev in camera_events:
+                    if ev.id in local_to_global:
+                        matched_global_ids.add(local_to_global[ev.id])
+            except Exception:
+                pass
 
         for gid in matched_global_ids:
             if gid in seen_globals:

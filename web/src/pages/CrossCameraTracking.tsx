@@ -97,6 +97,7 @@ export default function CrossCameraTracking() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"map" | "alerts" | "tracks">("map");
+  const [selectedMapTrack, setSelectedMapTrack] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -198,17 +199,19 @@ export default function CrossCameraTracking() {
         <TrackMapView
           apiKey={window.__FRIGATE_GOOGLE_MAPS_KEY || ""}
           mapData={mapData}
+          selectedTrackId={selectedMapTrack}
+          alertGlobalIds={new Set(alertPaths.map((a) => a.global_id))}
         />
       ) : tab === "alerts" ? (
-        <AlertPathsView alertPaths={alertPaths} />
+        <AlertPathsView alertPaths={alertPaths} onShowOnMap={(gid) => { setSelectedMapTrack(gid); setTab("map"); }} />
       ) : (
-        <TracksView trackList={trackList} />
+        <TracksView trackList={trackList} onShowOnMap={(gid) => { setSelectedMapTrack(gid); setTab("map"); }} />
       )}
     </div>
   );
 }
 
-function AlertPathsView({ alertPaths }: { alertPaths: AlertPath[] }) {
+function AlertPathsView({ alertPaths, onShowOnMap }: { alertPaths: AlertPath[]; onShowOnMap: (gid: string) => void }) {
   if (alertPaths.length === 0) {
     return (
       <div className="flex h-40 items-center justify-center text-muted-foreground">
@@ -314,10 +317,20 @@ function AlertPathsView({ alertPaths }: { alertPaths: AlertPath[] }) {
             </div>
 
             {/* Footer */}
-            <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
-              <span>First seen: {formatTime(ap.first_seen)}</span>
-              <span>Last seen: {formatTime(ap.last_seen)}</span>
-              <span>Total sightings: {ap.total_sightings}</span>
+            <div className="mt-2 flex items-center justify-between">
+              <div className="flex gap-4 text-xs text-muted-foreground">
+                <span>First seen: {formatTime(ap.first_seen)}</span>
+                <span>Last seen: {formatTime(ap.last_seen)}</span>
+                <span>Total sightings: {ap.total_sightings}</span>
+              </div>
+              {ap.cameras_visited >= 2 && (
+                <button
+                  className="rounded bg-blue-500/10 px-2 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-500/20"
+                  onClick={() => onShowOnMap(ap.global_id)}
+                >
+                  🗺️ Show on Map
+                </button>
+              )}
             </div>
           </div>
         );
@@ -326,7 +339,7 @@ function AlertPathsView({ alertPaths }: { alertPaths: AlertPath[] }) {
   );
 }
 
-function TracksView({ trackList }: { trackList: GlobalTrack[] }) {
+function TracksView({ trackList, onShowOnMap }: { trackList: GlobalTrack[]; onShowOnMap: (gid: string) => void }) {
   if (trackList.length === 0) {
     return (
       <div className="flex h-40 items-center justify-center text-muted-foreground">
@@ -395,18 +408,26 @@ function TracksView({ trackList }: { trackList: GlobalTrack[] }) {
             </span>
           </div>
 
-          <div className="mt-2 flex flex-wrap gap-2">
-            {track.sightings.map((s, i) => (
-              <div
-                key={`${s.camera}-${i}`}
-                className="flex items-center gap-1 rounded bg-secondary px-2 py-1 text-xs"
-              >
-                <span className="font-semibold">{s.camera}</span>
-                <span className="text-muted-foreground">
-                  {formatTime(s.first_seen)} → {formatTime(s.last_seen)}
-                </span>
-              </div>
-            ))}
+          <div className="mt-2 flex items-center justify-between">
+            <div className="flex flex-wrap gap-2">
+              {track.sightings.map((s, i) => (
+                <div
+                  key={`${s.camera}-${i}`}
+                  className="flex items-center gap-1 rounded bg-secondary px-2 py-1 text-xs"
+                >
+                  <span className="font-semibold">{s.camera}</span>
+                  <span className="text-muted-foreground">
+                    {formatTime(s.first_seen)} → {formatTime(s.last_seen)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <button
+              className="rounded bg-blue-500/10 px-2 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-500/20 flex-shrink-0"
+              onClick={() => onShowOnMap(track.global_id)}
+            >
+              🗺️ Show on Map
+            </button>
           </div>
         </div>
       ))}
