@@ -5,3 +5,5 @@ declare global {
     __FRIGATE_GOOGLE_MAPS_KEY?: string;
   }
 }
+
+export {};
