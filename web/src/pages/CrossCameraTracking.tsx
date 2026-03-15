@@ -13,9 +13,14 @@ interface Sighting {
 
 interface GlobalTrack {
   global_id: string;
+  label: string;
   plate: string | null;
   color: string;
   vehicle_type: string;
+  upper_color: string;
+  lower_color: string;
+  body_ratio: number;
+  face_name: string | null;
   sightings: Sighting[];
   created_at: number;
   updated_at: number;
@@ -26,6 +31,34 @@ interface Stats {
   tracks_with_plate: number;
   tracks_without_plate: number;
   cameras_involved: string[];
+}
+
+interface CameraPathStep {
+  camera: string;
+  enter_time: number;
+  exit_time: number;
+}
+
+interface AlertPath {
+  alert_id: string;
+  alert_camera: string;
+  alert_start: number;
+  alert_severity: string;
+  alert_thumb: string;
+  global_id: string;
+  label: string;
+  upper_color: string | null;
+  lower_color: string | null;
+  body_ratio: number | null;
+  face_name: string | null;
+  plate: string | null;
+  color: string | null;
+  vehicle_type: string | null;
+  camera_path: CameraPathStep[];
+  cameras_visited: number;
+  total_sightings: number;
+  first_seen: number;
+  last_seen: number;
 }
 
 const COLOR_DOTS: Record<string, string> = {
@@ -39,6 +72,8 @@ const COLOR_DOTS: Record<string, string> = {
   white: "⚪",
   silver: "⚪",
   gray: "⚫",
+  cyan: "🔵",
+  pink: "🩷",
 };
 
 function formatTime(ts: number): string {
@@ -46,24 +81,31 @@ function formatTime(ts: number): string {
   return new Date(ts * 1000).toLocaleTimeString();
 }
 
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const min = Math.floor(seconds / 60);
+  const sec = Math.round(seconds % 60);
+  return `${min}m${sec}s`;
+}
+
 export default function CrossCameraTracking() {
   const [tracks, setTracks] = useState<Record<string, GlobalTrack>>({});
   const [stats, setStats] = useState<Stats | null>(null);
+  const [alertPaths, setAlertPaths] = useState<AlertPath[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"tracks" | "alerts">("alerts");
 
   const fetchData = useCallback(async () => {
     try {
-      const [tracksRes, statsRes] = await Promise.all([
+      const [tracksRes, statsRes, alertsRes] = await Promise.all([
         axios.get("/api/cross_camera/tracks"),
         axios.get("/api/cross_camera/stats"),
+        axios.get("/api/cross_camera/alerts"),
       ]);
-      if (tracksRes.data.success) {
-        setTracks(tracksRes.data.tracks);
-      }
-      if (statsRes.data.success) {
-        setStats(statsRes.data);
-      }
+      if (tracksRes.data.success) setTracks(tracksRes.data.tracks);
+      if (statsRes.data.success) setStats(statsRes.data);
+      if (alertsRes.data.success) setAlertPaths(alertsRes.data.alerts);
       setError(null);
     } catch {
       setError("Failed to load cross-camera data");
@@ -81,9 +123,7 @@ export default function CrossCameraTracking() {
   const handleCleanup = async () => {
     try {
       const res = await axios.delete("/api/cross_camera/expired");
-      if (res.data.success) {
-        fetchData();
-      }
+      if (res.data.success) fetchData();
     } catch {
       // ignore
     }
@@ -113,9 +153,25 @@ export default function CrossCameraTracking() {
     <div className="flex size-full flex-col gap-4 p-4">
       <div className="flex items-center justify-between">
         <Heading as="h2">Cross-Camera Tracking</Heading>
-        <Button variant="outline" size="sm" onClick={handleCleanup}>
-          Clean Expired
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant={tab === "alerts" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setTab("alerts")}
+          >
+            🚨 Alert Paths
+          </Button>
+          <Button
+            variant={tab === "tracks" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setTab("tracks")}
+          >
+            📡 All Tracks
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleCleanup}>
+            Clean Expired
+          </Button>
+        </div>
       </div>
 
       {stats && (
@@ -127,22 +183,182 @@ export default function CrossCameraTracking() {
         </div>
       )}
 
-      {trackList.length === 0 ? (
-        <div className="flex h-40 items-center justify-center text-muted-foreground">
-          No cross-camera tracks active
-        </div>
+      {tab === "alerts" ? (
+        <AlertPathsView alertPaths={alertPaths} />
       ) : (
-        <div className="grid gap-3">
-          {trackList.map((track) => (
-            <div
-              key={track.global_id}
-              className="rounded-lg border bg-card p-4 shadow-sm"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-sm font-bold">
-                    {track.global_id}
+        <TracksView trackList={trackList} />
+      )}
+    </div>
+  );
+}
+
+function AlertPathsView({ alertPaths }: { alertPaths: AlertPath[] }) {
+  if (alertPaths.length === 0) {
+    return (
+      <div className="flex h-40 items-center justify-center text-muted-foreground">
+        No alert paths — waiting for alerts with cross-camera matches
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-4">
+      {alertPaths.map((ap) => {
+        const duration = ap.last_seen - ap.first_seen;
+        return (
+          <div
+            key={ap.global_id}
+            className="rounded-lg border bg-card p-4 shadow-sm"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="rounded bg-red-500/10 px-2 py-0.5 text-sm font-semibold text-red-600">
+                  🚨 ALERT
+                </span>
+                <span className="font-mono text-sm font-bold">
+                  {ap.global_id}
+                </span>
+                {ap.label === "person" ? (
+                  <>
+                    <span className="rounded bg-blue-500/10 px-2 py-0.5 text-sm font-semibold text-blue-600">
+                      🧑 person
+                    </span>
+                    {ap.face_name && (
+                      <span className="rounded bg-green-500/10 px-2 py-0.5 text-sm font-semibold text-green-600">
+                        👤 {ap.face_name}
+                      </span>
+                    )}
+                    {ap.upper_color && ap.upper_color !== "unknown" && (
+                      <span className="text-sm">
+                        👕 {COLOR_DOTS[ap.upper_color] || "❓"} {ap.upper_color}
+                      </span>
+                    )}
+                    {ap.lower_color && ap.lower_color !== "unknown" && (
+                      <span className="text-sm">
+                        👖 {COLOR_DOTS[ap.lower_color] || "❓"} {ap.lower_color}
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {ap.plate && (
+                      <span className="rounded bg-primary/10 px-2 py-0.5 text-sm font-semibold text-primary">
+                        🚗 {ap.plate}
+                      </span>
+                    )}
+                    {ap.color && (
+                      <span className="text-sm">
+                        {COLOR_DOTS[ap.color] || "❓"} {ap.color}
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <span>📷 {ap.cameras_visited} cameras</span>
+                <span>⏱ {formatDuration(duration)}</span>
+              </div>
+            </div>
+
+            {/* Camera Path Timeline */}
+            <div className="mt-3">
+              <div className="text-xs font-semibold text-muted-foreground mb-2">
+                Movement Path:
+              </div>
+              <div className="flex items-center gap-1 flex-wrap">
+                {ap.camera_path.map((step, i) => (
+                  <div key={`${step.camera}-${i}`} className="flex items-center gap-1">
+                    {i > 0 && (
+                      <span className="text-lg text-muted-foreground">→</span>
+                    )}
+                    <div
+                      className={`rounded-lg px-3 py-2 text-xs ${
+                        step.camera === ap.alert_camera
+                          ? "bg-red-500/10 border border-red-500/30"
+                          : "bg-secondary"
+                      }`}
+                    >
+                      <div className="font-bold">{step.camera}</div>
+                      <div className="text-muted-foreground">
+                        {formatTime(step.enter_time)}
+                        {step.exit_time !== step.enter_time && (
+                          <> → {formatTime(step.exit_time)}</>
+                        )}
+                      </div>
+                      {step.exit_time > step.enter_time && (
+                        <div className="text-muted-foreground">
+                          ({formatDuration(step.exit_time - step.enter_time)})
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
+              <span>First seen: {formatTime(ap.first_seen)}</span>
+              <span>Last seen: {formatTime(ap.last_seen)}</span>
+              <span>Total sightings: {ap.total_sightings}</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TracksView({ trackList }: { trackList: GlobalTrack[] }) {
+  if (trackList.length === 0) {
+    return (
+      <div className="flex h-40 items-center justify-center text-muted-foreground">
+        No cross-camera tracks active
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-3">
+      {trackList.map((track) => (
+        <div
+          key={track.global_id}
+          className="rounded-lg border bg-card p-4 shadow-sm"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="font-mono text-sm font-bold">
+                {track.global_id}
+              </span>
+              {track.label === "person" ? (
+                <>
+                  <span className="rounded bg-blue-500/10 px-2 py-0.5 text-sm font-semibold text-blue-600">
+                    🧑 person
                   </span>
+                  {track.face_name && (
+                    <span className="rounded bg-green-500/10 px-2 py-0.5 text-sm font-semibold text-green-600">
+                      👤 {track.face_name}
+                    </span>
+                  )}
+                  {track.upper_color && track.upper_color !== "unknown" && (
+                    <span className="text-sm">
+                      👕 {COLOR_DOTS[track.upper_color] || "❓"} {track.upper_color}
+                    </span>
+                  )}
+                  {track.lower_color && track.lower_color !== "unknown" && (
+                    <span className="text-sm">
+                      👖 {COLOR_DOTS[track.lower_color] || "❓"} {track.lower_color}
+                    </span>
+                  )}
+                  {track.body_ratio > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      📏 ratio: {track.body_ratio}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <>
                   {track.plate && (
                     <span className="rounded bg-primary/10 px-2 py-0.5 text-sm font-semibold text-primary">
                       🚗 {track.plate}
@@ -154,30 +370,30 @@ export default function CrossCameraTracking() {
                   <span className="text-sm text-muted-foreground">
                     {track.vehicle_type}
                   </span>
-                </div>
-                <span className="text-xs text-muted-foreground">
-                  {track.sightings.length} camera
-                  {track.sightings.length > 1 ? "s" : ""}
+                </>
+              )}
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {track.sightings.length} camera
+              {track.sightings.length > 1 ? "s" : ""}
+            </span>
+          </div>
+
+          <div className="mt-2 flex flex-wrap gap-2">
+            {track.sightings.map((s, i) => (
+              <div
+                key={`${s.camera}-${i}`}
+                className="flex items-center gap-1 rounded bg-secondary px-2 py-1 text-xs"
+              >
+                <span className="font-semibold">{s.camera}</span>
+                <span className="text-muted-foreground">
+                  {formatTime(s.first_seen)} → {formatTime(s.last_seen)}
                 </span>
               </div>
-
-              <div className="mt-2 flex flex-wrap gap-2">
-                {track.sightings.map((s, i) => (
-                  <div
-                    key={`${s.camera}-${i}`}
-                    className="flex items-center gap-1 rounded bg-secondary px-2 py-1 text-xs"
-                  >
-                    <span className="font-semibold">{s.camera}</span>
-                    <span className="text-muted-foreground">
-                      {formatTime(s.first_seen)} → {formatTime(s.last_seen)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      )}
+      ))}
     </div>
   );
 }
