@@ -65,6 +65,7 @@ interface TrackMapViewProps {
   mapData: MapData;
   selectedTrackId?: string | null;
   alertGlobalIds?: Set<string>;
+  onCameraClick?: (cameraName: string) => void;
 }
 
 // Get position along road at a given time
@@ -136,12 +137,14 @@ function NativeMarkers({
   movingPos,
   movingLabel,
   movingColor,
+  onCameraClick,
 }: {
   cameras: { name: string; latitude: number; longitude: number }[];
   activeCameras: Set<string>;
   movingPos: { lat: number; lng: number } | null;
   movingLabel: string;
   movingColor: string;
+  onCameraClick?: (cameraName: string) => void;
 }) {
   const map = useMap();
   const markersRef = useRef<google.maps.Marker[]>([]);
@@ -173,14 +176,21 @@ function NativeMarkers({
           strokeWeight: 2,
         },
       });
+      if (onCameraClick) {
+        marker.addListener("click", () => onCameraClick(cam.name));
+        marker.setCursor("pointer");
+      }
       markersRef.current.push(marker);
     });
 
     return () => {
-      markersRef.current.forEach((m) => m.setMap(null));
+      markersRef.current.forEach((m) => {
+        google.maps.event.clearInstanceListeners(m);
+        m.setMap(null);
+      });
       markersRef.current = [];
     };
-  }, [map, cameras, activeCameras]);
+  }, [map, cameras, activeCameras, onCameraClick]);
 
   useEffect(() => {
     if (!map) return;
@@ -325,7 +335,7 @@ function RouteRenderer({
   return null;
 }
 
-export default function TrackMapView({ apiKey, mapData, selectedTrackId, alertGlobalIds }: TrackMapViewProps) {
+export default function TrackMapView({ apiKey, mapData, selectedTrackId, alertGlobalIds, onCameraClick }: TrackMapViewProps) {
   const [selectedTrack, setSelectedTrack] = useState<string | null>(selectedTrackId || null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackTime, setPlaybackTime] = useState(0);
@@ -555,6 +565,7 @@ export default function TrackMapView({ apiKey, mapData, selectedTrackId, alertGl
                 movingPos={movingPos ? { lat: movingPos.lat, lng: movingPos.lng } : null}
                 movingLabel={activeTrack ? (activeTrack.label === "person" ? "🧑" : "🚗") : ""}
                 movingColor={trackColor}
+                onCameraClick={onCameraClick}
               />
               {visibleTracks.map((track, i) => (
                 <RouteRenderer

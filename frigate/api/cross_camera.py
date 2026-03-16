@@ -1,9 +1,14 @@
 """Cross-camera tracking API endpoints."""
 
+import json
 import logging
+import os
+import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Request
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +46,53 @@ def get_cross_camera_track(request: Request, global_id: str):
         return {"success": False, "message": f"Track {global_id} not found"}
 
     return {"success": True, "track": tracks[global_id]}
+
+
+@router.get("/api/cross_camera/search")
+def search_cross_camera_tracks(
+    request: Request,
+    upper_color: Optional[str] = None,
+    lower_color: Optional[str] = None,
+    label: Optional[str] = None,
+    plate: Optional[str] = None,
+    face_name: Optional[str] = None,
+    vehicle_type: Optional[str] = None,
+    color: Optional[str] = None,
+):
+    """Search global tracks by attribute filters (AND logic)."""
+    tracker = _get_tracker(request)
+    if tracker is None:
+        return {"success": False, "message": "Cross-camera tracking not enabled"}
+
+    tracks = tracker.get_global_tracks()
+
+    filters = {
+        "upper_color": upper_color,
+        "lower_color": lower_color,
+        "label": label,
+        "plate": plate,
+        "face_name": face_name,
+        "vehicle_type": vehicle_type,
+        "color": color,
+    }
+    # Remove None values
+    active_filters = {k: v.lower() for k, v in filters.items() if v is not None}
+
+    if not active_filters:
+        return {"success": True, "tracks": tracks, "count": len(tracks)}
+
+    matched = {}
+    for gid, track in tracks.items():
+        match = True
+        for key, value in active_filters.items():
+            track_value = track.get(key)
+            if track_value is None or str(track_value).lower() != value:
+                match = False
+                break
+        if match:
+            matched[gid] = track
+
+    return {"success": True, "tracks": matched, "count": len(matched)}
 
 
 @router.get("/api/cross_camera/stats")
@@ -260,6 +312,136 @@ def get_cross_camera_map_data(request: Request):
     }
 
 
+@router.get("/api/cross_camera/dwell_analysis")
+def get_dwell_analysis(request: Request, threshold: int = 300):
+    """Analyze dwell time per camera for each global track.
+
+    Returns how long each global track stayed at each camera,
+    and flags anomalies where dwell time exceeds the threshold.
+
+    Query params:
+        threshold: seconds to consider a dwell anomalous (default 300)
+    """
+    tracker = _get_tracker(request)
+    if tracker is None:
+        return {"success": False, "message": "Cross-camera tracking not enabled"}
+
+    tracks = tracker.get_global_tracks()
+
+    analysis = []
+    anomalies = []
+
+    for gid, track in tracks.items():
+        sightings = track.get("sightings", [])
+        if not sightings:
+            continue
+
+        camera_dwell = []
+        total_duration = 0.0
+
+        for s in sightings:
+            first_seen = s.get("first_seen")
+            last_seen = s.get("last_seen")
+            if first_seen is None or last_seen is None:
+                continue
+            duration = round(last_seen - first_seen, 2)
+            is_anomaly = duration > threshold
+            camera_dwell.append({
+                "camera": s.get("camera"),
+                "duration": duration,
+                "is_anomaly": is_anomaly,
+            })
+            total_duration += duration
+
+        entry = {
+            "global_id": gid,
+            "label": track.get("label", "unknown"),
+            "total_duration": round(total_duration, 2),
+            "camera_dwell": camera_dwell,
+        }
+        analysis.append(entry)
+
+        if any(d["is_anomaly"] for d in camera_dwell):
+            anomalies.append(entry)
+
+    return {
+        "success": True,
+        "analysis": analysis,
+        "anomalies": anomalies,
+        "threshold": threshold,
+    }
+
+
+@router.get("/api/cross_camera/heatmap")
+def get_cross_camera_heatmap(request: Request):
+    """Return heatmap data: per-camera detection counts and path flows between cameras."""
+    tracker = _get_tracker(request)
+    if tracker is None:
+        return {"success": False, "message": "Cross-camera tracking not enabled"}
+
+    tracks = tracker.get_global_tracks()
+
+    # camera_counts: {camera: {label: count}}
+    camera_counts: dict[str, dict[str, int]] = {}
+    # path_flows: {(from, to, label): count}
+    path_flows: dict[tuple[str, str, str], int] = {}
+
+    for track in tracks.values():
+        label = track.get("label", "unknown")
+        sightings = track.get("sightings", [])
+
+        prev_camera = None
+        for s in sightings:
+            cam = s.get("camera")
+            if cam is None:
+                continue
+
+            # Count detection per camera
+            if cam not in camera_counts:
+                camera_counts[cam] = {}
+            camera_counts[cam][label] = camera_counts[cam].get(label, 0) + 1
+
+            # Count path flow between consecutive different cameras
+            if prev_camera is not None and prev_camera != cam:
+                key = (prev_camera, cam, label)
+                path_flows[key] = path_flows.get(key, 0) + 1
+
+            prev_camera = cam
+
+    # Format camera_counts with totals
+    formatted_counts: dict[str, dict[str, int]] = {}
+    for cam, labels in camera_counts.items():
+        entry = dict(labels)
+        entry["total"] = sum(labels.values())
+        formatted_counts[cam] = entry
+
+    # Format path_flows as list
+    formatted_flows = [
+        {"from": f, "to": t, "count": c, "label": lb}
+        for (f, t, lb), c in path_flows.items()
+    ]
+    formatted_flows.sort(key=lambda x: -x["count"])
+
+    # Busiest camera
+    busiest_camera = None
+    if formatted_counts:
+        busiest_camera = max(formatted_counts, key=lambda c: formatted_counts[c]["total"])
+
+    # Busiest path
+    busiest_path = None
+    if formatted_flows:
+        top = formatted_flows[0]
+        busiest_path = {"from": top["from"], "to": top["to"], "count": top["count"]}
+
+    return {
+        "success": True,
+        "camera_counts": formatted_counts,
+        "path_flows": formatted_flows,
+        "busiest_camera": busiest_camera,
+        "busiest_path": busiest_path,
+    }
+
+
 @router.delete("/api/cross_camera/expired")
 def cleanup_expired_tracks(request: Request):
     """Manually trigger cleanup of expired global tracks."""
@@ -269,3 +451,125 @@ def cleanup_expired_tracks(request: Request):
 
     removed = tracker.cleanup_expired()
     return {"success": True, "removed": removed}
+
+
+# ---------------------------------------------------------------------------
+# Watchlist (face / plate watch list)
+# ---------------------------------------------------------------------------
+
+WATCHLIST_PATH = "/config/cross_camera_watchlist.json"
+
+
+class WatchlistItem(BaseModel):
+    type: str  # "face" or "plate"
+    value: str
+    note: str = ""
+
+
+def _load_watchlist() -> list[dict]:
+    """Load watchlist from JSON file."""
+    if not os.path.exists(WATCHLIST_PATH):
+        return []
+    try:
+        with open(WATCHLIST_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def _save_watchlist(items: list[dict]) -> None:
+    """Save watchlist to JSON file."""
+    os.makedirs(os.path.dirname(WATCHLIST_PATH), exist_ok=True)
+    with open(WATCHLIST_PATH, "w", encoding="utf-8") as f:
+        json.dump(items, f, ensure_ascii=False, indent=2)
+
+
+@router.post("/api/cross_camera/watchlist")
+def add_watchlist_item(request: Request, body: WatchlistItem):
+    """Add a face or plate to the watchlist."""
+    if body.type not in ("face", "plate"):
+        return {"success": False, "message": "type must be 'face' or 'plate'"}
+
+    items = _load_watchlist()
+    new_item = {
+        "id": str(uuid.uuid4()),
+        "type": body.type,
+        "value": body.value,
+        "note": body.note,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    items.append(new_item)
+    _save_watchlist(items)
+
+    return {"success": True, "item": new_item}
+
+
+@router.get("/api/cross_camera/watchlist")
+def get_watchlist(request: Request):
+    """Return the full watchlist."""
+    items = _load_watchlist()
+    return {"success": True, "items": items, "count": len(items)}
+
+
+@router.delete("/api/cross_camera/watchlist/{item_id}")
+def delete_watchlist_item(request: Request, item_id: str):
+    """Delete a watchlist item by ID."""
+    items = _load_watchlist()
+    new_items = [i for i in items if i.get("id") != item_id]
+
+    if len(new_items) == len(items):
+        return {"success": False, "message": f"Item {item_id} not found"}
+
+    _save_watchlist(new_items)
+    return {"success": True, "message": f"Item {item_id} deleted"}
+
+
+@router.get("/api/cross_camera/watchlist/matches")
+def get_watchlist_matches(request: Request):
+    """Check current global tracks for matches against the watchlist."""
+    tracker = _get_tracker(request)
+    if tracker is None:
+        return {"success": False, "message": "Cross-camera tracking not enabled"}
+
+    items = _load_watchlist()
+    if not items:
+        return {"success": True, "matches": [], "count": 0}
+
+    # Build lookup sets
+    face_watchlist: dict[str, dict] = {}
+    plate_watchlist: dict[str, dict] = {}
+    for item in items:
+        if item["type"] == "face":
+            face_watchlist[item["value"].lower()] = item
+        elif item["type"] == "plate":
+            plate_watchlist[item["value"].upper()] = item
+
+    tracks = tracker.get_global_tracks()
+    matches = []
+
+    for gid, track in tracks.items():
+        # Check face match
+        face_name = track.get("face_name")
+        if face_name and face_name.lower() in face_watchlist:
+            wl_item = face_watchlist[face_name.lower()]
+            matches.append({
+                "watchlist_item": wl_item,
+                "global_id": gid,
+                "match_field": "face_name",
+                "match_value": face_name,
+                "track": track,
+            })
+
+        # Check plate match
+        plate = track.get("plate")
+        if plate and plate.upper() in plate_watchlist:
+            wl_item = plate_watchlist[plate.upper()]
+            matches.append({
+                "watchlist_item": wl_item,
+                "global_id": gid,
+                "match_field": "plate",
+                "match_value": plate,
+                "track": track,
+            })
+
+    return {"success": True, "matches": matches, "count": len(matches)}

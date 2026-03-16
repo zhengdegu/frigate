@@ -3,6 +3,7 @@ import Heading from "@/components/ui/heading";
 import { Button } from "@/components/ui/button";
 import axios from "axios";
 import TrackMapView from "@/components/TrackMapView";
+import CameraSnapshotPanel from "@/components/CameraSnapshotPanel";
 
 interface Sighting {
   camera: string;
@@ -98,6 +99,7 @@ export default function CrossCameraTracking() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"map" | "alerts" | "tracks">("map");
   const [selectedMapTrack, setSelectedMapTrack] = useState<string | null>(null);
+  const [selectedCamera, setSelectedCamera] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -196,12 +198,21 @@ export default function CrossCameraTracking() {
       )}
 
       {tab === "map" ? (
-        <TrackMapView
-          apiKey={window.__FRIGATE_GOOGLE_MAPS_KEY || ""}
-          mapData={mapData}
-          selectedTrackId={selectedMapTrack}
-          alertGlobalIds={new Set(alertPaths.map((a) => a.global_id))}
-        />
+        <div className="flex flex-col gap-3">
+          <TrackMapView
+            apiKey={window.__FRIGATE_GOOGLE_MAPS_KEY || ""}
+            mapData={mapData}
+            selectedTrackId={selectedMapTrack}
+            alertGlobalIds={new Set(alertPaths.map((a) => a.global_id))}
+            onCameraClick={(cam) => setSelectedCamera((prev) => prev === cam ? null : cam)}
+          />
+          {selectedCamera && (
+            <CameraSnapshotPanel
+              cameraName={selectedCamera}
+              onClose={() => setSelectedCamera(null)}
+            />
+          )}
+        </div>
       ) : tab === "alerts" ? (
         <AlertPathsView alertPaths={alertPaths} onShowOnMap={(gid) => { setSelectedMapTrack(gid); setTab("map"); }} />
       ) : (
