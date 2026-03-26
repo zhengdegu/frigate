@@ -88,7 +88,7 @@
     "sort-by": "^1.2.0",
     "strftime": "^0.10.3",
     "swr": "^2.3.2",
-    "tailwind-merge": "^2.4.0",
+    "tailwind-merge": "^3.5.0",
     "tailwind-scrollbar": "^3.1.0",
     "tailwindcss-animate": "^1.0.7",
     "use-long-press": "^3.2.0",
