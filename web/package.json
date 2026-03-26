@@ -59,7 +59,7 @@
     "i18next-http-backend": "^3.0.1",
     "idb-keyval": "^6.2.1",
     "immer": "^10.1.1",
-    "konva": "^9.3.18",
+    "konva": "^10.2.0",
     "lodash": "^4.17.23",
     "lucide-react": "^0.477.0",
     "monaco-yaml": "^5.3.1",
